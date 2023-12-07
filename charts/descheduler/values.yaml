@@ -212,3 +212,7 @@ serviceMonitor:
     #   targetLabel: nodename
     #   replacement: $1
     #   action: replace
+  ipDualStack:
+    enabled: false
+    ipFamilies: ["IPv6", "IPv4"]
+    ipFamilyPolicy: "PreferDualStack"

@@ -10,6 +10,10 @@ metadata:
 spec:
   clusterIP: None
   ports:
+{{- if .Values.service.ipDualStack.enabled }}
+  ipFamilies: {{ toYaml .Values.service.ipDualStack.ipFamilies | nindent 4 }}
+  ipFamilyPolicy: {{ .Values.service.ipDualStack.ipFamilyPolicy }}
+{{- end }}
   - name: http-metrics
     port: 10258
     protocol: TCP
