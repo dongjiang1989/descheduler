@@ -3,12 +3,12 @@
 # Declare variables to be passed into your templates.
 
 # CronJob or Deployment
-kind: CronJob
+kind: Deployment
 
 image:
-  repository: registry.k8s.io/descheduler/descheduler
+  repository: docker.io/dongjiang1989/descheduler
   # Overrides the image tag whose default is the chart version
-  tag: ""
+  tag: "v1.0.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets:
@@ -17,7 +17,7 @@ imagePullSecrets:
 resources:
   requests:
     cpu: 500m
-    memory: 256Mi
+    memory: 512Mi
   # limits:
   #   cpu: 100m
   #   memory: 128Mi
@@ -58,13 +58,13 @@ deschedulingInterval: 5m
 # Set leaderElection if you want to use more than 1 replica
 # Set affinity.podAntiAffinity rule if you want to schedule onto a node
 # only if that node is in the same zone as at least one already-running descheduler
-replicas: 1
+replicas: 3
 
 # Specifies whether Leader Election resources should be created
 # Required when running as a Deployment
 # NOTE: Leader election can't be activated if DryRun enabled
-leaderElection: {}
-#  enabled: true
+leaderElection:
+  enabled: true
 #  leaseDuration: 15s
 #  renewDeadline: 10s
 #  retryPeriod: 2s
@@ -76,10 +76,10 @@ command:
 - "/bin/descheduler"
 
 cmdOptions:
-  v: 3
+  v: 4
 
 # Recommended to use the latest Policy API version supported by the Descheduler app version
-deschedulerPolicyAPIVersion: "descheduler/v1alpha1"
+deschedulerPolicyAPIVersion: "descheduler/v1alpha2"
 
 deschedulerPolicy:
   # nodeSelector: "key1=value1,key2=value2"
@@ -94,40 +94,63 @@ deschedulerPolicy:
   #   serviceNamespace: ""
   #   sampleRate: 1.0
   #   fallbackToNoOpProviderOnError: true
-  strategies:
-    RemoveDuplicates:
-      enabled: true
-    RemovePodsHavingTooManyRestarts:
-      enabled: true
-      params:
-        podsHavingTooManyRestarts:
-          podRestartThreshold: 100
-          includingInitContainers: true
-    RemovePodsViolatingNodeTaints:
-      enabled: true
-    RemovePodsViolatingNodeAffinity:
-      enabled: true
-      params:
-        nodeAffinityType:
-        - requiredDuringSchedulingIgnoredDuringExecution
-    RemovePodsViolatingInterPodAntiAffinity:
-      enabled: true
-    RemovePodsViolatingTopologySpreadConstraint:
-      enabled: true
-      params:
-        includeSoftConstraints: false
-    LowNodeUtilization:
-      enabled: true
-      params:
-        nodeResourceUtilizationThresholds:
+  profiles:
+    - name: ProfileName
+      pluginConfig:
+      - name: "RemoveDuplicates"
+        args:
+          excludeOwnerKinds: # ReplicationController/ReplicaSet/StatefulSet/Job
+          - "StatefulSet"
+          - "Job"
+          namespaces: # namespaces 白名单和黑名单
+            exclude:
+            - "kube-system"
+            - "kube-public"
+            - "kube-node-lease"
+      - name: "LowNodeUtilization"
+        args:
+          #numberOfNodes: 5 # 仅当未充分利用的节点数高于5时, 才激活该策略
           thresholds:
-            cpu: 20
-            memory: 20
-            pods: 20
+            "cpu" : 20
+            "memory": 20
+            "pods": 20
           targetThresholds:
-            cpu: 50
-            memory: 50
-            pods: 50
+            "cpu" : 50
+            "memory": 50
+            "pods": 50
+          evictableNamespaces: # namespaces 白名单和黑名单
+            exclude:
+            - "kube-system"
+            - "kube-public"
+            - "kube-node-lease"
+      - name: "RemovePodsHavingTooManyRestarts"
+        args:
+          podRestartThreshold: 50   # 重启次数高达50次以上
+          includingInitContainers: true # 是否check InitContainer的重启次数
+      - name: "RemoveFailedPods"
+        args:
+          reasons: # 只统计list下错误原因
+          - "NodeAffinity"
+          - "CreateContainerConfigError"
+          - "OutOfcpu"
+          includingInitContainers: true # 也需要check InitContainers的错误原因
+          excludeOwnerKinds: # 过滤类型，Job类型Pod不考虑
+          - "Job"
+          minPodLifetimeSeconds: 3600 # 逐出错位指定秒数的 Pod，单位秒
+          namespaces: # namespaces 白名单和黑名单
+            exclude:
+            - "kube-system"
+            - "kube-public"
+            - "kube-node-lease"
+      plugins:
+        deschedule:
+          enabled:
+            - "RemovePodsHavingTooManyRestarts"
+            - "RemoveFailedPods"
+        balance:
+          enabled:
+            - "RemoveDuplicates"
+            - "LowNodeUtilization"
 
 priorityClassName: system-cluster-critical
 
